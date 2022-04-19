@@ -4,10 +4,21 @@ use chumsky::{prelude::*};
 
 fn main() {
     let source = include_str!("main.psps");
-    let result = lexer().parse(source);
-    
-    println!("{:?}", result);
-    let whitespace = ' '.is_whitespace();
-    let new_line = '\n'.is_whitespace();
-    println!("whitespace: {}, newline: {}", whitespace, new_line);
+    let lexed = lexer().parse(source);
+    match lexed {
+        Ok(result) => {
+            let parsed = parser().parse(result);
+            match parsed {
+                Ok(result) => {
+                    let evaluated  = evaluate(result);
+                    match evaluated {
+                        Err(error) => println!("{:?}", error),
+                        _ => {}
+                    }
+                },
+                Err(error) => println!("{:?}", error)
+            }
+        },
+        Err(error) => println!("{:?}", error)
+    };
 }
