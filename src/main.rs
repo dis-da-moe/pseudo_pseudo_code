@@ -1,24 +1,25 @@
 mod lexer;
+mod evaluate;
+mod tokens;
+mod parser;
+mod test;
+
+use parser::*;
 use lexer::*;
+use evaluate::*;
+
 use chumsky::{prelude::*};
 
-fn main() {
+fn print_error<Error: std::fmt::Debug>(error: Error) -> String { format!("error: {:?}", error) }
+
+fn main() -> Result<(), String>{
     let source = include_str!("main.psps");
-    let lexed = lexer().parse(source);
-    match lexed {
-        Ok(result) => {
-            let parsed = parser().parse(result);
-            match parsed {
-                Ok(result) => {
-                    let evaluated  = evaluate(result);
-                    match evaluated {
-                        Err(error) => println!("{:?}", error),
-                        _ => {}
-                    }
-                },
-                Err(error) => println!("{:?}", error)
-            }
-        },
-        Err(error) => println!("{:?}", error)
-    };
+    
+    let lexed =  lexer().parse(source).map_err(print_error)?;
+    
+    let parsed = parser().parse(lexed).map_err(print_error)?;
+    
+    evaluate(parsed).map_err(print_error)?;
+    
+    Ok(())
 }
