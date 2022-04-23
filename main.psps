@@ -1,0 +1,5 @@
+DECLARE string : STRING
+
+OUTPUT "Enter something to echo: "
+INPUT string // "INPUT" reads console input and assigns it to the variable
+OUTPUT "echo: " & string // the & symbol concatenates 
