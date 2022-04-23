@@ -1,3 +1,0 @@
-DECLARE number : INTEGER
-number <- 10
-OUT number
