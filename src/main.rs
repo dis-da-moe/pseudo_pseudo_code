@@ -52,7 +52,7 @@ fn main() -> Result<(), String> {
 
     evaluate(parsed, HashMap::new()).map_err(print_error)?;
 
-    println!("Program run successfully. Press enter to exit.");
+    println!("\x1b[93mThe Program has run successfully. Press enter to exit.\x1b[0m");
     stdin().read(&mut [0]).unwrap();
     Ok(())
 }

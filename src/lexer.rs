@@ -100,6 +100,8 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
             .then_ignore(whitespace()),
     );
 
+    let comma = just(',').to(Token::Comma);
+
     let tokens = choice::<_, Simple<char>>((
         comment
             .repeated()
@@ -118,6 +120,7 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
         colon,
         open_bracket,
         close_bracket,
+        comma
     ));
     let ignored = indent().or(comment.ignored()).repeated().ignored();
 

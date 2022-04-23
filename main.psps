@@ -8,9 +8,13 @@ INPUT answer
 DECLARE out : STRING
 out <- "The guess was "
 IF answer = password THEN
-    OUTPUT out & "correct."
+    OUTPUT out, "correct."
 ELSE
-    OUTPUT out & "incorrect."
+    IF answer = "" THEN
+        OUTPUT "no answer given"
+    ELSE
+        OUTPUT out, "incorrect."
+    ENDIF
 ENDIF
 
 

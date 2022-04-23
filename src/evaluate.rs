@@ -178,8 +178,10 @@ pub fn evaluate(statements: Vec<Statement>, parent_scope: HashMap<String, Variab
                 variable.value = Some(value);
             }
 
-            Statement::Out(expression) => {
-                let value = evaluate_expression(expression, &variables)?;
+            Statement::Out(expressions) => {
+                let values: Vec<Literal> = expressions
+                .iter()
+                .map(|expression| evaluate_expression(expression.clone(), &variables)).collect::<Result<Vec<Literal>, Execution>>()?;
 
                 /* No type checking until string conversion function is implemented 
                 let data_type = DataTypes::from(&value);
@@ -187,7 +189,7 @@ pub fn evaluate(statements: Vec<Statement>, parent_scope: HashMap<String, Variab
                     return Err(Execution::IncorrectType(DataTypes::String, data_type));
                 }*/
 
-                println!("{}", value);
+                println!("{}", values.iter().map(|literal| format!("{}", literal)).collect::<Vec<_>>().join(""));
             }
 
             Statement::In(identifier) => {

@@ -83,7 +83,8 @@ pub enum Token {
     If,
     Then,
     Else,
-    EndIf
+    EndIf,
+    Comma
 }
 
 impl Default for Token {
@@ -169,7 +170,7 @@ impl From<&Literal> for DataTypes {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Statement {
     Declare(String, DataTypes),
-    Out(Expression),
+    Out(Vec<Expression>),
     Assign(String, Expression),
     In(String),
     If(Expression, Vec<Statement>, Option<Vec<Statement>>)

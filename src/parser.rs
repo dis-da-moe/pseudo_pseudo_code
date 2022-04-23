@@ -64,8 +64,8 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             .map(|(identifier, expression)| Statement::Assign(identifier, expression));
 
         let out = just(Token::Out)
-            .ignore_then(expression.clone())
-            .map(|expression| Statement::Out(expression));
+            .ignore_then(expression.clone().separated_by(just(Token::Comma)).at_least(1))
+            .map(|expressions| Statement::Out(expressions));
 
         let r#in = just(Token::In)
             .ignore_then(identifier)
