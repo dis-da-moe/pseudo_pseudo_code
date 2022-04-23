@@ -97,6 +97,8 @@ fn float_operations(operation: Ops, a: f64, b: f64) -> Result<Literal, Execution
 fn string_operations(operation: Ops, a: String, b: String) -> Result<Literal, Execution> {
     match operation {
         Ops::Concatenate => Ok(Literal::String { value: a + &b }),
+        Ops::Equal => Ok(Literal::Boolean {value: a == b}),        
+        Ops::NotEqual => Ok(Literal::Boolean {value: a != b}),
         _ => Err(Execution::OperatorNotSupported(
             operation,
             DataTypes::String,
@@ -200,7 +202,7 @@ pub fn evaluate(statements: Vec<Statement>, parent_scope: HashMap<String, Variab
                 }
                 let mut input = String::new();
                 stdin().read_line(&mut input).unwrap();
-                variable.value = Some(Literal::String { value: input });
+                variable.value = Some(Literal::String { value: input.trim().to_string() });
             }
 
             Statement::If(conditional, if_branch, else_branch) => {

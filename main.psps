@@ -1,5 +1,16 @@
-DECLARE string : STRING
+DECLARE password : STRING
+password <- "password"
 
-OUTPUT "Enter something to echo: "
-INPUT string // "INPUT" reads console input and assigns it to the variable
-OUTPUT "echo: " & string // the & symbol concatenates 
+DECLARE answer: STRING
+OUTPUT "guess the password"
+INPUT answer
+
+DECLARE out : STRING
+out <- "The guess was "
+IF answer = password THEN
+    OUTPUT out & "correct."
+ELSE
+    OUTPUT out & "incorrect."
+ENDIF
+
+
