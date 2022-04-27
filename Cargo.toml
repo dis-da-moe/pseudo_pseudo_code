@@ -1,5 +1,5 @@
 [package]
-name = "pseudo_rust"
+name = "pseudo_pseudo_code"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 chumsky = "0.8.0"
-regex = "1"
+ariadne = "0.1.5"
+rand = "0.8.5"

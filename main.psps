@@ -1,20 +1,40 @@
-DECLARE password : STRING
-password <- "password"
+DECLARE myList : ARRAY[0:8] OF INTEGER
+DECLARE n: INTEGER
+FOR n <- 0 TO 8
+    myList[n] <- RANDOMBETWEEN(0, 100)
+ENDFOR
 
-DECLARE answer: STRING
-OUTPUT "guess the password"
-INPUT answer
+OUTPUT "before"
 
-DECLARE out : STRING
-out <- "The guess was "
-IF answer = password THEN
-    OUTPUT out, "correct."
-ELSE
-    IF answer = "" THEN
-        OUTPUT "no answer given"
-    ELSE
-        OUTPUT out, "incorrect."
-    ENDIF
-ENDIF
+FOR n <- 0 TO 8
+    OUTPUT NUM_TO_STR(myList[n])
+ENDFOR
 
 
+DECLARE upperBound : INTEGER
+DECLARE lowerBound : INTEGER
+DECLARE index : INTEGER
+DECLARE swap : BOOLEAN
+DECLARE temp : INTEGER
+DECLARE top : INTEGER
+upperBound ← 8
+lowerBound <- 0
+top <- upperBound
+REPEAT
+    swap <- FALSE
+    FOR index <- lowerBound TO top - 1
+        IF myList[index] > myList[index + 1]
+            THEN
+            temp <- myList[index]
+            myList[index] <- myList[index + 1]
+            myList[index + 1] <- temp
+            swap <- TRUE
+        ENDIF
+    NEXT
+    top <- top -1
+UNTIL (NOT swap) OR (top = 0)
+
+OUTPUT "after"
+FOR n <- 0 TO 8
+    OUTPUT NUM_TO_STR(myList[n])
+ENDFOR

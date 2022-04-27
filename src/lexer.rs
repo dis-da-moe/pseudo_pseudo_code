@@ -1,4 +1,4 @@
-use crate::tokens::*;
+use crate::ast::*;
 use chumsky::prelude::*;
 use chumsky::text::{newline, whitespace};
 
@@ -23,40 +23,60 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
                 Token::Integer(whole)
             }
         });
-    
-    let boolean = text::keyword("TRUE").to(Token::Boolean(true))
-    .or(text::keyword("FALSE").to(Token::Boolean(false)));
-    
+
+    let boolean = text::keyword("TRUE")
+        .to(Token::Boolean(true))
+        .or(text::keyword("FALSE").to(Token::Boolean(false)));
+
     let open_bracket = just('(').to(Token::OpenBracket);
     let close_bracket = just(')').to(Token::CloseBracket);
 
-    let identifiers = filter(|char: &char| char.is_alphabetic())
-        .then(filter(|char: &char| char.is_alphanumeric()).repeated())
-        .map(|(first, second)| {
-            let identifier = second.iter().fold(String::from(first), |mut string, next| {
-                string.push(*next);
-                string
-            });
+    let open_square = just('[').to(Token::OpenSquare);
+    let close_square = just(']').to(Token::CloseSquare);
 
-            match identifier.as_str() {
-                "DECLARE" => Token::Declare,
-                "OUTPUT" => Token::Out,
-                "INPUT" => Token::In,
-                _ => Token::Identifier(identifier),
+    let identifiers = text::ident().map(|name: String| {
+        use Token::*;
+        match name.as_str() {
+            "DECLARE" => Declare,
+            "OUTPUT" => Out,
+            "INPUT" => In,
+            "RETURN" => Return,
+            "IF" => If,
+            "ENDIF" => EndIf,
+            "THEN" => Then,
+            "ELSE" => Else,
+            "FOR" => For,
+            "ENDFOR" => EndFor,
+            "TO" => To,
+            "WHILE" => While,
+            "ENDWHILE" => EndWhile,
+            "DO" => Do,
+            "REPEAT" => Repeat,
+            "UNTIL" => Until,
+            "OF" => Of,
+            "NEXT" => Next,
+            "INTEGER" => DataType(DataTypes::Literal(LiteralType::Integer)),
+            "REAL" => DataType(DataTypes::Literal(LiteralType::Real)),
+            "STRING" => DataType(DataTypes::Literal(LiteralType::String)),
+            "BOOLEAN" => DataType(DataTypes::Literal(LiteralType::Boolean)),
+            "ARRAY" => DataType(DataTypes::Array),
+            _ => {
+                let chars: Vec<char> = name.chars().collect();
+                if chars.first().unwrap().is_alphabetic()
+                    && chars.iter().all(|char| char.is_alphanumeric())
+                {
+                    Token::Identifier(name)
+                } else {
+                    Token::BuiltIn(name)
+                }
             }
-        });
+        }
+    });
 
     let string = filter(|char: &char| char != &'\n' && char != &'\"')
         .repeated()
         .map(|vec| Token::String(vec.into_iter().collect()))
         .delimited_by(just('\"'), just('\"'));
-
-    let conditionals = choice::<_, Simple<char>>((
-        just("IF").to(Token::If),
-        just("ENDIF").to(Token::EndIf),
-        just("THEN").to(Token::Then),
-        just("ELSE").to(Token::Else),
-    ));
 
     let operators = choice::<_, Simple<char>>(just_to! {
     Operator, Ops,
@@ -78,17 +98,9 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
         "NOT" => Not
     });
 
-    let assign = just("<-").to(Token::Arrow);
+    let assign = just("<-").or(just("←")).to(Token::Arrow);
 
     let colon = just(':').to(Token::Colon);
-
-    let data_types = choice::<_, Simple<char>>(just_to! {
-        DataType, DataTypes,
-        "INTEGER" => Integer,
-        "REAL" => Real,
-        "STRING" => String,
-        "BOOLEAN" => Boolean
-    });
 
     let new_line = newline().repeated().at_least(1).ignored();
 
@@ -111,23 +123,21 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
             .to(Token::NewLine),
         number,
         string,
-        data_types,
         boolean,
-        conditionals,
         assign,
         operators,
         identifiers,
         colon,
         open_bracket,
         close_bracket,
-        comma
+        open_square,
+        close_square,
+        comma,
     ));
     let ignored = indent().or(comment.ignored()).repeated().ignored();
 
-    (ignored
-        .ignore_then(tokens.repeated().at_least(1))
-        .then_ignore(ignored))
-    .repeated()
-    .then_ignore(end())
-    .map(|tokens| tokens.into_iter().flatten().collect())
+    (tokens.repeated().at_least(1).padded_by(ignored))
+        .repeated()
+        .then_ignore(end())
+        .map(|tokens| tokens.into_iter().flatten().collect())
 }
