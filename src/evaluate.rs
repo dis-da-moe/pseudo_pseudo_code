@@ -457,12 +457,6 @@ pub fn evaluate<'a>(
                     .map(|expression| evaluate_expression(expression, &state))
                     .collect::<Result<Vec<Literal>, Spanned<Execution>>>()?;
 
-                /* No type checking until string conversion function is implemented
-                let data_type = DataTypes::from(&value);
-                if data_type != DataTypes::String {
-                    return Err(Execution::IncorrectType(DataTypes::String, data_type));
-                }*/
-
                 println!(
                     "{}",
                     values
