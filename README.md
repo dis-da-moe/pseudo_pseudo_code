@@ -18,20 +18,20 @@ DECLARE swap : BOOLEAN
 DECLARE temp : INTEGER
 DECLARE top : INTEGER
 upperBound ← 8
-lowerBound <- 0
-top <- upperBound
+lowerBound ← 0
+top ← upperBound
 REPEAT
-    swap <- FALSE 
-    FOR index <- lowerBound TO top - 1
+    swap ← FALSE 
+    FOR index ← lowerBound TO top - 1
         IF myList[index] > myList[index + 1] 
             THEN
-            temp <- myList[index] 
-            myList[index] <- myList[index + 1]
-            myList[index + 1] <- temp
-            swap <- TRUE 
+            temp ← myList[index] 
+            myList[index] ← myList[index + 1]
+            myList[index + 1] ← temp
+            swap ← TRUE 
         ENDIF
     NEXT
-    top <- top -1
+    top ← top -1
 UNTIL (NOT swap) OR (top = 0) 
 
 // after: 3, 11, 18, 22, 49, 68, 92, 98, 98
@@ -45,7 +45,7 @@ I was bored one time in class, and after experiencing a lost mark in a test beca
 
 ## Running
 
-Download the .exe and run it in the command line with the path to the desired file as the first argument. I've included examples in the `examples` folder, with `error.psps` deliberately erroring in order to show the nice error reporting.  If you want to write your own PseudoPseudoCode for some weird reason, just make a file with the `.psps` extension and run that through the command line.
+Download the .exe and run it in the command line with the path to the desired file as the first argument. I've included examples in the `examples` folder, with `error.psps` deliberately erroring in order to show the nice error reporting.  If you want to write your own PseudoPseudoCode for some weird reason, just make a file with the `.psps` extension and run that through the command line. There's also a VS Code extension for syntax highlighting in the `extension` directory, available as a `.vsix` file.
 
 ## Building
 

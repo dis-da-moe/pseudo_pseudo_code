@@ -1,13 +1,13 @@
 // create an array of random numbers
 DECLARE myList : ARRAY[0:8] OF INTEGER
 DECLARE n: INTEGER
-FOR n <- 0 TO 8
-    myList[n] <- RANDOMBETWEEN(0, 100)
+FOR n ← 0 TO 8
+    myList[n] ← RANDOMBETWEEN(0, 100)
 ENDFOR
 
 // print the array before sorting
 OUTPUT "before"
-FOR n <- 0 TO 8
+FOR n ← 0 TO 8
     OUTPUT NUM_TO_STR(myList[n])
 ENDFOR
 
@@ -19,32 +19,32 @@ DECLARE swap : BOOLEAN
 DECLARE temp : INTEGER
 DECLARE top : INTEGER
 upperBound ← 8
-lowerBound <- 0
-top <- upperBound
+lowerBound ← 0
+top ← upperBound
 REPEAT
     // note that there have been no swaps in this iteration yet
-    swap <- FALSE 
-    FOR index <- lowerBound TO top - 1
+    swap ← FALSE 
+    FOR index ← lowerBound TO top - 1
         // check each element and its neighbour to see if they are in the wrong order
         IF myList[index] > myList[index + 1] 
             THEN
             // assign to temporary variable to swap the elements
-            temp <- myList[index] 
-            myList[index] <- myList[index + 1]
-            myList[index + 1] <- temp
+            temp ← myList[index] 
+            myList[index] ← myList[index + 1]
+            myList[index + 1] ← temp
             // note that there has been a swap
-            swap <- TRUE 
+            swap ← TRUE 
         ENDIF
     NEXT
     // decrease the length of the list to sort for next iteration
     // we know for sure that the last element is in the correct place
-    top <- top -1
+    top ← top -1
 // stop if there have been no swaps this iteration
 // or if we have reached the end
 UNTIL (NOT swap) OR (top = 0) 
 
 // print array after sorting
 OUTPUT "after"
-FOR n <- 0 TO 8
+FOR n ← 0 TO 8
     OUTPUT NUM_TO_STR(myList[n])
 ENDFOR
