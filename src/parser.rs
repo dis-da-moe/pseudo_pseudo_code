@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::ast::*;
 use chumsky::prelude::*;
 
@@ -7,11 +9,12 @@ macro_rules! operator {
             .clone()
             .then(
                 select! {Token::Operator(op) if $allowed.contains(&op) => op}
-                    .map(|op| |x, y| Expression::Operate(op, x, y))
+                    .map_with_span(|op, span| |x, y| (Expression::Operate(op, x, y), span))
                     .then($base)
                     .repeated(),
             )
             .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)))
+            .boxed()
     };
 }
 
@@ -25,12 +28,12 @@ macro_rules! function_call {
     };
 }
 
-pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
+pub fn parser() -> impl Parser<Token, Vec<Spanned<Statement>>, Error = Simple<Token>> {
     let identifier = select! {Token::Identifier(name) => name}.labelled("identifier");
-    //let data_type = select! {Token::DataType(r#type) => r#type.clone()}.labelled("data type");
+
     let literal_type =
         select! {Token::DataType(DataTypes::Literal(literal_type)) => literal_type.clone()}
-            .labelled("literal type");
+            .labelled("data type");
 
     let int = select! {Token::Integer(int) => int.parse().unwrap()};
 
@@ -40,6 +43,8 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
         Token::String(string) => Expression::Value(Literal::String(string)),
         Token::Boolean(boolean) => Expression::Value(Literal::Bool(boolean))
     }
+    .boxed()
+    .map_with_span(|expression, span: Range<usize>| (expression, span))
     .labelled("literal");
 
     let built_in = select! {Token::BuiltIn(name) => name};
@@ -51,27 +56,44 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
                 expr.clone()
                     .delimited_by(just(Token::OpenSquare), just(Token::CloseSquare)),
             )
-            .map(|(identifier, expression): (String, Expression)| {
-                Expression::ArrayIndex(identifier, Box::new(expression))
-            });
+            .map_with_span(|(identifier, expression), span| {
+                (
+                    Expression::ArrayIndex(identifier, Box::new(expression)),
+                    span,
+                )
+            })
+            .boxed();
 
         let atom = index_array
             .or(literal)
             .or(function_call!(identifier.or(built_in), expr.clone())
-                .map(|(name, args)| Expression::FunctionCall(name, args)))
-            .or(identifier.clone().map(|name| Expression::Variable(name)))
+                .map_with_span(|(name, args), span| (Expression::FunctionCall(name, args), span)))
+            .or(identifier
+                .clone()
+                .map_with_span(|name, span: Range<usize>| (Expression::Variable(name), span)))
             .or(expr
                 .clone()
-                .delimited_by(just(Token::OpenBracket), just(Token::CloseBracket)));
+                .delimited_by(just(Token::OpenBracket), just(Token::CloseBracket)))
+            .boxed();
 
         let unary = just(Token::Operator(Ops::Minus))
+            .map_with_span(|token, span: Range<usize>| (token, span))
             .repeated()
             .then(atom.clone())
-            .foldr(|_, right_side| Expression::Negative(Box::new(right_side)))
+            .foldr(|left, right| {
+                let span = left.1.start..right.1.end;
+                return (Expression::Negative(Box::new(right)), span);
+            })
+            .boxed()
             .or(just(Token::Operator(Ops::Not))
+                .map_with_span(|token, span: Range<usize>| (token, span))
                 .repeated()
                 .then(expr)
-                .foldr(|_, right_side| Expression::Not(Box::new(right_side))));
+                .foldr(|left, right_side| {
+                    let span = left.1.start..right_side.1.end;
+                    (Expression::Not(Box::new(right_side)), span)
+                })
+                .boxed());
 
         let products = operator!(&PRODUCTS, unary);
 
@@ -85,12 +107,14 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
     let statement = recursive(|stat| {
         let declare = just(Token::Declare)
             .ignore_then(identifier)
-            .then_ignore(just(Token::Colon));
+            .then_ignore(just(Token::Colon))
+            .boxed();
 
         let declare_literal = declare
             .clone()
             .then(literal_type.clone())
-            .map(|(identifier, literal_type)| Declare::Literal(identifier, literal_type));
+            .map(|(identifier, literal_type)| Declare::Literal(identifier, literal_type))
+            .boxed();
 
         let declare_array = declare
             .then_ignore(just(Token::DataType(DataTypes::Array)))
@@ -111,17 +135,20 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
                     },
                     literal_type,
                 )
-            });
+            })
+            .boxed();
 
         let declare = declare_array
             .or(declare_literal)
-            .map(|declare| Statement::Declare(declare));
+            .map(|declare| Statement::Declare(declare))
+            .boxed();
 
         let assign_literal = identifier
             .clone()
             .then_ignore(just(Token::Arrow))
             .then(expression.clone())
-            .map(|(identifier, expression)| Assign::Literal(identifier, expression));
+            .map(|(identifier, expression)| Assign::Literal(identifier, expression))
+            .boxed();
 
         let assign_array = identifier
             .clone()
@@ -132,7 +159,8 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             )
             .then_ignore(just(Token::Arrow))
             .then(expression.clone())
-            .map(|((identifier, index), assign)| Assign::Array(identifier, index, assign));
+            .map(|((identifier, index), assign)| Assign::Array(identifier, index, assign))
+            .boxed();
 
         let assign = assign_array
             .or(assign_literal)
@@ -145,7 +173,8 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
                     .separated_by(just(Token::Comma))
                     .at_least(1),
             )
-            .map(|expressions| Statement::Out(expressions));
+            .map(|expressions| Statement::Out(expressions))
+            .boxed();
 
         let in_ = just(Token::In)
             .ignore_then(identifier)
@@ -164,7 +193,8 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             .map(|((conditional, if_branch), else_branch)| {
                 Statement::If(conditional, if_branch, else_branch)
             })
-            .then_ignore(just(Token::EndIf));
+            .then_ignore(just(Token::EndIf))
+            .boxed();
 
         let procedure = function_call!(identifier.clone(), expression.clone())
             .map(|(name, args)| Statement::ProcedureCall(name, args));
@@ -185,7 +215,8 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
                 Statement::For(identifier, start, end, statements)
             })
             .then_ignore(just(Token::EndFor).or(just(Token::Next)))
-            .then_ignore(identifier.or_not());
+            .then_ignore(identifier.or_not())
+            .boxed();
 
         let while_ = just(Token::While)
             .ignore_then(expression.clone())
@@ -193,22 +224,23 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             .then_ignore(newline(1))
             .then(stat.clone().repeated().at_least(1))
             .map(|(expression, statements)| Statement::While(expression, statements))
-            .then_ignore(just(Token::EndWhile));
+            .then_ignore(just(Token::EndWhile))
+            .boxed();
 
         let repeat = just(Token::Repeat)
             .ignore_then(newline(1))
             .ignore_then(stat.clone().repeated().at_least(1))
             .then_ignore(just(Token::Until))
             .then(expression.clone())
-            .map(|(statements, expression)| Statement::Repeat(statements, expression));
+            .map(|(statements, expression)| Statement::Repeat(statements, expression))
+            .boxed();
 
         choice((
             declare, assign, out, in_, if_, procedure, return_, for_, while_, repeat,
         ))
+        .map_with_span(|statement, span| (statement, span))
         .then_ignore(newline(1).or(end().rewind()))
     });
 
-    let statements = statement.repeated().then_ignore(end());
-
-    statements
+    statement.repeated().then_ignore(end())
 }

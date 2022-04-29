@@ -1,9 +1,9 @@
 use crate::ast::*;
 use std::{
-    borrow::BorrowMut,
+    borrow::{BorrowMut, Borrow},
     collections::HashMap,
     io::stdin,
-    ops::{Add, Div, Mul, Rem, Sub},
+    ops::{Add, Div, Mul, Rem, Sub, Deref},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,7 +25,6 @@ fn get_variable<'current>(
             return Ok(var);
         }
     }
-
     Err(Execution::NotFound(String::from(identifier)))
 }
 
@@ -43,7 +42,7 @@ fn get_literal<'current>(
                         return Err(Execution::NotAssigned(String::from(identifier)));
                     }
                 }
-                _ => return Err(Execution::LiteralToArray),
+                _ => return Err(Execution::IncorrectType(LiteralType::Any.into(), DataTypes::Array)),
             }
         }
     }
@@ -58,8 +57,8 @@ fn index_array<'current>(
 ) -> Result<&'current Literal, Execution> {
     let variable = get_variable(state, identifier)?;
     match variable {
-        Variable::Literal { .. } => {
-            return Err(Execution::LiteralToArray);
+        Variable::Literal { literal_type, .. } => {
+            return Err(Execution::IncorrectType(DataTypes::Array, literal_type.into()));
         }
         Variable::Array {
             literal_type: _,
@@ -108,13 +107,13 @@ fn assign_array(
             bounds,
             values,
         } => (literal_type, bounds, values),
-        Variable::Literal { .. } => return Err(Execution::LiteralToArray),
+        Variable::Literal { literal_type, .. } => return Err(Execution::IncorrectType(DataTypes::Array, literal_type.deref().into())),
     };
 
     let assign_type = LiteralType::from(&to_assign);
 
     if &assign_type != array_type {
-        return Err(Execution::IncorrectType(array_type.clone(), assign_type));
+        return Err(Execution::IncorrectType(array_type.deref().into(), assign_type.into()));
     }
 
     if index < bounds.lower || index > bounds.upper {
@@ -146,7 +145,7 @@ fn assign_literal(
             *value = Some(literal);
             return Ok(state);
         }
-        Variable::Array { .. } => return Err(Execution::LiteralToArray),
+        Variable::Array { .. } => return Err(Execution::IncorrectType(LiteralType::Any.into(), DataTypes::Array)),
     }
 }
 
@@ -156,37 +155,62 @@ macro_rules! eval {
     };
 }
 
-fn evaluate_expression(expression: &Expression, state: &State) -> Result<Literal, Execution> {
+macro_rules! span {
+    ($span: expr) => {
+        |err| (err, $span.clone())
+    };
+}
+
+fn evaluate_expression(
+    expression: &Spanned<Expression>,
+    state: &State,
+) -> Result<Literal, Spanned<Execution>> {
+    let (expression, span) = expression;
     match expression {
         Expression::Value(value) => Ok(value.clone()),
-        Expression::Variable(identifier) => {
-            get_literal(state, &identifier).map(|literal| literal.clone())
+        Expression::Variable(identifier) => get_literal(state, &identifier)
+            .map(|literal| literal.clone())
+            .map_err(span!(span)),
+        Expression::Negative(expression) => negate(&eval!(expression, state)?).map_err(span!(span)),
+        Expression::Operate(op, a, b) => {
+            operate(op, &eval!(a, state)?, &eval!(b, state)?).map_err(span!(span))
         }
-        Expression::Negative(expression) => negate(&eval!(expression, state)?),
-        Expression::Operate(op, a, b) => operate(op, &eval!(a, state)?, &eval!(b, state)?),
-        Expression::Not(expression) => not(&eval!(expression, state)?),
+        Expression::Not(expression) => not(&eval!(expression, state)?).map_err(span!(span)),
         Expression::FunctionCall(name, args) => {
-            
             if name == "LEN" {
                 let identifier = match args.get(0) {
-                    Some(Expression::Variable(identifier)) => identifier,
-                    Some(_) => return Err(Execution::LiteralToArray),
-                    None => return Err(Execution::IncorrectNumberArguments(String::from("LEN"), 1, 0))
+                    Some((Expression::Variable(identifier), _)) => identifier,
+                    Some(expression) => {
+                        let result_type: LiteralType = eval!(expression, state)?.borrow().into();
+                        return Err((Execution::IncorrectType(DataTypes::Array, result_type.into()), expression.1.clone()))
+                    },
+                    None => {
+                        return Err((
+                            Execution::IncorrectNumberArguments(String::from("LEN"), 1, 0),
+                            span.clone(),
+                        ))
+                    }
                 };
-                let array = get_variable(state, identifier)?;
+                let array = get_variable(state, identifier).map_err(span!(span))?;
                 match array {
-                    Variable::Array { bounds, ..} => return Ok(Literal::Integer((bounds.upper - bounds.lower + 1).try_into().unwrap())),
-                    Variable::Literal { .. } => return Err(Execution::LiteralToArray)
+                    Variable::Array { bounds, .. } => {
+                        return Ok(Literal::Integer(
+                            (bounds.upper - bounds.lower + 1).try_into().unwrap(),
+                        ))
+                    }
+                    Variable::Literal { literal_type, .. } => {
+                        return Err((Execution::IncorrectType(DataTypes::Array, literal_type.into()), span.clone()))
+                    }
                 }
             }
-            
+
             let function = state
                 .functions
                 .get(name)
-                .ok_or_else(|| Execution::NotFound(name.clone()))?;
-            
+                .ok_or_else(|| (Execution::NotFound(name.clone()), span.clone()))?;
+
             let call = match function {
-                Function::BuiltIn(call) => call
+                Function::BuiltIn(call) => call,
             };
 
             let values: Vec<Literal> = args
@@ -194,24 +218,29 @@ fn evaluate_expression(expression: &Expression, state: &State) -> Result<Literal
                 .map(|arg| eval!(arg, state))
                 .collect::<Result<_, _>>()?;
 
-            return call(values);
+            return call(values).map_err(span!(span));
         }
         Expression::ArrayIndex(identifier, expression) => {
             let index = evaluate_expression(&*expression, state)?;
             let index = match index {
                 Literal::Integer(value) => value,
                 _ => {
-                    return Err(Execution::IncorrectType(
-                        LiteralType::Integer,
-                        LiteralType::from(&index),
+                    return Err((
+                        Execution::IncorrectType(LiteralType::Integer.into(), LiteralType::from(&index).into()),
+                        span.clone(),
                     ))
                 }
             };
-            let index: usize = index
-                .try_into()
-                .map_err(|_| Execution::NegativeIndex(String::from(identifier), index))?;
+            let index: usize = index.try_into().map_err(|_| {
+                (
+                    Execution::NegativeIndex(String::from(identifier), index),
+                    span.clone(),
+                )
+            })?;
 
-            index_array(state, identifier, index).map(|literal| literal.clone())
+            index_array(state, identifier, index)
+                .map(|literal| literal.clone())
+                .map_err(span!(span))
         }
     }
 }
@@ -222,7 +251,7 @@ fn negate(value: &Literal) -> Result<Literal, Execution> {
         Literal::Real(value) => Ok(Literal::Real(-value)),
         _ => Err(Execution::UnaryNotSupported(
             Ops::Minus,
-            LiteralType::from(value),
+            LiteralType::from(value).into(),
         )),
     }
 }
@@ -232,7 +261,7 @@ fn not(value: &Literal) -> Result<Literal, Execution> {
         Literal::Bool(value) => Ok(Literal::Bool(!value)),
         _ => Err(Execution::UnaryNotSupported(
             Ops::Not,
-            LiteralType::from(value),
+            LiteralType::from(value).into(),
         )),
     }
 }
@@ -266,8 +295,8 @@ fn operate(operation: &Ops, a: &Literal, b: &Literal) -> Result<Literal, Executi
     let not_found = || {
         Execution::BinaryNotSupported(
             operation.clone(),
-            LiteralType::from(a),
-            LiteralType::from(b),
+            LiteralType::from(a).into(),
+            LiteralType::from(b).into(),
         )
     };
     use Literal::*;
@@ -346,19 +375,22 @@ fn operate(operation: &Ops, a: &Literal, b: &Literal) -> Result<Literal, Executi
 }
 
 pub fn evaluate<'a>(
-    statements: &Vec<Statement>,
+    statements: &Vec<Spanned<Statement>>,
     mut state: State,
     as_function: bool,
-) -> Result<State, Execution> {
+) -> Result<State, Spanned<Execution>> {
     state.scopes.push(Scope {
         variables: HashMap::new(),
     });
 
-    for statement in statements {
+    for (statement, span) in statements {
         match statement {
             Statement::Declare(Declare::Literal(identifier, literal_type)) => {
                 if get_variable(&state, identifier.as_str()).is_ok() {
-                    return Err(Execution::AlreadyDeclared(String::from(identifier)));
+                    return Err((
+                        Execution::AlreadyDeclared(String::from(identifier)),
+                        span.clone(),
+                    ));
                 }
                 let variables = state.scopes.last_mut().unwrap().variables.borrow_mut();
 
@@ -367,10 +399,13 @@ pub fn evaluate<'a>(
 
             Statement::Declare(Declare::Array(identifier, bounds, literal_type)) => {
                 if get_variable(&state, identifier.as_str()).is_ok() {
-                    return Err(Execution::AlreadyDeclared(String::from(identifier)));
+                    return Err((
+                        Execution::AlreadyDeclared(String::from(identifier)),
+                        span.clone(),
+                    ));
                 }
                 if bounds.lower >= bounds.upper {
-                    return Err(Execution::InvalidBounds(bounds.clone()));
+                    return Err((Execution::InvalidBounds(bounds.clone()), span.clone()));
                 }
 
                 let variables = state.scopes.last_mut().unwrap().variables.borrow_mut();
@@ -387,7 +422,7 @@ pub fn evaluate<'a>(
             Statement::Assign(Assign::Literal(identifier, expression)) => {
                 let value = evaluate_expression(expression, &state)?;
 
-                state = assign_literal(state, identifier.as_str(), value)?;
+                state = assign_literal(state, identifier.as_str(), value).map_err(span!(span))?;
             }
 
             Statement::Assign(Assign::Array(identifier, index, expression)) => {
@@ -395,26 +430,32 @@ pub fn evaluate<'a>(
                 let index = match index {
                     Literal::Integer(value) => value,
                     _ => {
-                        return Err(Execution::IncorrectType(
-                            LiteralType::Integer,
-                            LiteralType::from(&index),
+                        return Err((
+                            Execution::IncorrectType(
+                                LiteralType::Integer.into(),
+                                LiteralType::from(&index).into(),
+                            ),
+                            span.clone(),
                         ))
                     }
                 };
-                let index: usize = index
-                    .try_into()
-                    .map_err(|_| Execution::NegativeIndex(String::from(identifier), index))?;
+                let index: usize = index.try_into().map_err(|_| {
+                    (
+                        Execution::NegativeIndex(String::from(identifier), index),
+                        span.clone(),
+                    )
+                })?;
 
                 let to_assign = evaluate_expression(expression, &state)?;
 
-                state = assign_array(state, identifier, index, to_assign)?;
+                state = assign_array(state, identifier, index, to_assign).map_err(span!(span))?;
             }
 
             Statement::Out(expressions) => {
                 let values: Vec<Literal> = expressions
                     .iter()
                     .map(|expression| evaluate_expression(expression, &state))
-                    .collect::<Result<Vec<Literal>, Execution>>()?;
+                    .collect::<Result<Vec<Literal>, Spanned<Execution>>>()?;
 
                 /* No type checking until string conversion function is implemented
                 let data_type = DataTypes::from(&value);
@@ -433,17 +474,17 @@ pub fn evaluate<'a>(
             }
 
             Statement::In(identifier) => {
-                let variable = get_variable(&state, identifier.as_str())?;
+                let variable = get_variable(&state, identifier.as_str()).map_err(span!(span))?;
 
                 let literal_type = match variable {
                     Variable::Literal { literal_type, .. } => literal_type,
-                    _ => return Err(Execution::LiteralToArray),
+                    _ => return Err((Execution::IncorrectType(LiteralType::String.into(), DataTypes::Array), span.clone())),
                 };
 
                 if literal_type != &LiteralType::String {
-                    return Err(Execution::IncorrectType(
-                        LiteralType::String,
-                        literal_type.clone(),
+                    return Err((
+                        Execution::IncorrectType(LiteralType::String.into(), literal_type.into()),
+                        span.clone(),
                     ));
                 }
 
@@ -453,7 +494,8 @@ pub fn evaluate<'a>(
                     state,
                     &identifier,
                     Literal::String(input.trim().to_string()),
-                )?;
+                )
+                .map_err(span!(span))?;
             }
 
             Statement::If(conditional, if_branch, else_branch) => {
@@ -461,7 +503,10 @@ pub fn evaluate<'a>(
                 let data_type = LiteralType::from(&result);
 
                 if data_type != LiteralType::Boolean {
-                    return Err(Execution::IncorrectType(LiteralType::Boolean, data_type));
+                    return Err((
+                        Execution::IncorrectType(LiteralType::Boolean.into(), data_type.into()),
+                        span.clone(),
+                    ));
                 }
 
                 let condition = bool::from(&result);
@@ -477,7 +522,7 @@ pub fn evaluate<'a>(
 
             Statement::Return(return_value) => {
                 if !as_function {
-                    return Err(Execution::CanNotCallReturn);
+                    return Err((Execution::CanNotCallReturn, span.clone()));
                 }
 
                 if let Some(expression) = return_value {
@@ -497,7 +542,7 @@ pub fn evaluate<'a>(
             }
 
             Statement::For(identifier, start, end, statements) => {
-                let iterator = get_variable(&state, identifier)?;
+                let iterator = get_variable(&state, identifier).map_err(span!(span))?;
                 match iterator {
                     Variable::Literal {
                         literal_type,
@@ -505,17 +550,23 @@ pub fn evaluate<'a>(
                         ..
                     } => {
                         if literal_type != &LiteralType::Integer {
-                            return Err(Execution::IncorrectType(
-                                LiteralType::Integer,
-                                literal_type.clone(),
+                            return Err((
+                                Execution::IncorrectType(
+                                    LiteralType::Integer.into(),
+                                    literal_type.into(),
+                                ),
+                                span.clone(),
                             ));
                         }
                         if !*is_mutable {
-                            return Err(Execution::AssignToConstant(String::from(identifier)));
+                            return Err((
+                                Execution::AssignToConstant(String::from(identifier)),
+                                span.clone(),
+                            ));
                         }
                     }
                     Variable::Array { .. } => {
-                        return Err(Execution::LiteralToArray);
+                        return Err((Execution::IncorrectType(LiteralType::Integer.into(), DataTypes::Array), span.clone()));
                     }
                 }
 
@@ -523,57 +574,59 @@ pub fn evaluate<'a>(
                 let start = match start_literal {
                     Literal::Integer(value) => value,
                     _ => {
-                        return Err(Execution::IncorrectType(
-                            LiteralType::Integer,
-                            LiteralType::from(&start_literal),
+                        return Err((
+                            Execution::IncorrectType(
+                                LiteralType::Integer.into(),
+                                LiteralType::from(&start_literal).into(),
+                            ),
+                            span.clone(),
                         ))
                     }
                 };
-                if start < 0 {
-                    return Err(Execution::NegativeLoop(start));
-                }
                 let end_literal = evaluate_expression(end, &state)?;
                 let end = match end_literal {
                     Literal::Integer(value) => value,
                     _ => {
-                        return Err(Execution::IncorrectType(
-                            LiteralType::Integer,
-                            LiteralType::from(&end_literal),
+                        return Err((
+                            Execution::IncorrectType(
+                                LiteralType::Integer.into(),
+                                LiteralType::from(&end_literal).into(),
+                            ),
+                            span.clone(),
                         ))
                     }
                 };
-                if end < 0 {
-                    return Err(Execution::NegativeLoop(end));
-                }
 
                 if start <= end {
                     let range = start..=end;
                     for n in range {
-                        state = assign_literal(state, identifier, Literal::Integer(n))?;
+                        state = assign_literal(state, identifier, Literal::Integer(n))
+                            .map_err(span!(span))?;
                         state = evaluate(statements, state, as_function)?;
                     }
                 }
             }
 
-            Statement::While(expression, statements) => {
-                loop {
-                    let condition = evaluate_expression(expression, &state)?;
-                    let continue_loop = match condition {
-                        Literal::Bool(value) => value,
-                        _ => {
-                            return Err(Execution::IncorrectType(
-                                LiteralType::Boolean,
-                                LiteralType::from(&condition),
-                            ))
-                        }
-                    };
-                    if continue_loop {
-                        state = evaluate(&statements, state, as_function)?;
-                    } else {
-                        break;
+            Statement::While(expression, statements) => loop {
+                let condition = evaluate_expression(expression, &state)?;
+                let continue_loop = match condition {
+                    Literal::Bool(value) => value,
+                    _ => {
+                        return Err((
+                            Execution::IncorrectType(
+                                LiteralType::Boolean.into(),
+                                LiteralType::from(&condition).into(),
+                            ),
+                            span.clone(),
+                        ))
                     }
+                };
+                if continue_loop {
+                    state = evaluate(&statements, state, as_function)?;
+                } else {
+                    break;
                 }
-            }
+            },
 
             Statement::Repeat(statements, expression) => loop {
                 state = evaluate(statements, state, as_function)?;
@@ -585,9 +638,12 @@ pub fn evaluate<'a>(
                         };
                     }
                     _ => {
-                        return Err(Execution::IncorrectType(
-                            LiteralType::Boolean,
-                            LiteralType::from(&condition),
+                        return Err((
+                            Execution::IncorrectType(
+                                LiteralType::Boolean.into(),
+                                LiteralType::from(&condition).into(),
+                            ),
+                            span.clone(),
                         ))
                     }
                 }

@@ -12,6 +12,7 @@ pub enum LiteralType {
     Real,
     String,
     Boolean,
+    Any,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -68,6 +69,8 @@ impl From<&str> for Ops {
         }
     }
 }
+pub type Span = std::ops::Range<usize>;
+pub type Spanned<T> = (T, Span);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Token {
@@ -121,7 +124,7 @@ pub enum Literal {
     Bool(bool),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bounds {
     pub lower: usize,
     pub upper: usize,
@@ -151,11 +154,11 @@ to_value!(Bool, bool, "boolean");
 pub enum Expression {
     Value(Literal),
     Variable(String),
-    ArrayIndex(String, Box<Expression>),
-    FunctionCall(String, Vec<Expression>),
-    Negative(Box<Expression>),
-    Operate(Ops, Box<Expression>, Box<Expression>),
-    Not(Box<Expression>),
+    ArrayIndex(String, Box<Spanned<Expression>>),
+    FunctionCall(String, Vec<Spanned<Expression>>),
+    Negative(Box<Spanned<Expression>>),
+    Operate(Ops, Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Not(Box<Spanned<Expression>>),
 }
 
 impl Display for Literal {
@@ -213,15 +216,24 @@ impl From<&Literal> for LiteralType {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Statement {
     Declare(Declare),
-    Out(Vec<Expression>),
+    Out(Vec<Spanned<Expression>>),
     Assign(Assign),
     In(String),
-    If(Expression, Vec<Statement>, Option<Vec<Statement>>),
-    ProcedureCall(String, Vec<Expression>),
-    Return(Option<Expression>),
-    For(String, Expression, Expression, Vec<Statement>),
-    While(Expression, Vec<Statement>),
-    Repeat(Vec<Statement>, Expression),
+    If(
+        Spanned<Expression>,
+        Vec<Spanned<Statement>>,
+        Option<Vec<Spanned<Statement>>>,
+    ),
+    ProcedureCall(String, Vec<Spanned<Expression>>),
+    Return(Option<Spanned<Expression>>),
+    For(
+        String,
+        Spanned<Expression>,
+        Spanned<Expression>,
+        Vec<Spanned<Statement>>,
+    ),
+    While(Spanned<Expression>, Vec<Spanned<Statement>>),
+    Repeat(Vec<Spanned<Statement>>, Spanned<Expression>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -232,33 +244,119 @@ pub enum Declare {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Assign {
-    Literal(String, Expression),
-    Array(String, Expression, Expression),
+    Literal(String, Spanned<Expression>),
+    Array(String, Spanned<Expression>, Spanned<Expression>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Hash, Eq)]
 pub enum Execution {
     NotFound(String),
     NotAssigned(String),
-    IncorrectType(LiteralType, LiteralType),
-    BinaryNotSupported(Ops, LiteralType, LiteralType),
-    UnaryNotSupported(Ops, LiteralType),
+    IncorrectType(DataTypes, DataTypes),
+    BinaryNotSupported(Ops, DataTypes, DataTypes),
+    UnaryNotSupported(Ops, DataTypes),
     AlreadyDeclared(String),
     IncorrectNumberArguments(String, usize, usize),
     CanNotCallReturn,
     CanNotParse(String),
-    LiteralToArray,
     AssignToConstant(String),
     InvalidBounds(Bounds),
     OutOfBounds(String, usize),
-    IndexNotAssigned(String, usize),
     NegativeIndex(String, isize),
-    NegativeLoop(isize),
+    IndexNotAssigned(String, usize),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Function {
-    BuiltIn(fn(Vec<Literal>) -> Result<Literal, Execution>)
+    BuiltIn(fn(Vec<Literal>) -> Result<Literal, Execution>),
+}
+
+impl From<&LiteralType> for DataTypes {
+    fn from(literal_type: &LiteralType) -> Self {
+        DataTypes::Literal(literal_type.clone())
+    }
+}
+
+impl From<LiteralType> for DataTypes {
+    fn from(literal_type: LiteralType) -> Self {
+        DataTypes::Literal(literal_type)
+    }
+}
+
+impl Display for LiteralType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use LiteralType::*;
+        f.write_str(match self{
+            Integer => "integer",
+            Real => "real",
+            String => "string",
+            Boolean => "boolean",
+            Any => "any"
+        })
+    }
+}
+
+impl Display for DataTypes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataTypes::Literal(literal_type) => f.write_str(&format!("{} literal", literal_type)),
+            DataTypes::Array => f.write_str("array"),
+        }
+    }
+}
+
+impl Display for Ops{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self{
+            Ops::Plus => "plus",
+            Ops::Minus => "minues",
+            Ops::Divide => "divide",
+            Ops::Multiply => "multiply",
+            Ops::Concatenate => "concatenate",
+            Ops::GreaterThan => "greater than",
+            Ops::LessThan => "less than",
+            Ops::GreaterThanEqual => "greater than or equal",
+            Ops::LessThanEqual => "less than or equal",
+            Ops::Equal => "equal",
+            Ops::NotEqual => "not equal",
+            Ops::Mod => "modulo",
+            Ops::Div => "integer divide",
+            Ops::And => "and",
+            Ops::Or => "or",
+            Ops::Not => "not",
+        })
+    }
+}
+
+impl Display for Bounds{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("lower: {}, upper: {}", self.lower, self.upper))
+    }
+}
+
+impl Display for Execution{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use Execution::*;
+
+        let message = match self {
+            NotFound(identifier) => format!("variable {} not found", identifier),
+            NotAssigned(identifier) => format!("variable {} not assigned", identifier),
+            IncorrectType(expected, received) => format!("Incorrect type, expected {} but received {}", expected, received),
+            BinaryNotSupported(op, a, b) => format!("Binary operator \"{}\" is not supported between types {} and {}", op, a, b),
+            UnaryNotSupported(op, a) => format!("Unary operator \"{}\" is not supported on type {}", op, a),
+            AlreadyDeclared(identifier) => format!("Variable {} is already declared", identifier),
+            IncorrectNumberArguments(identifier, expected, received) => 
+            format!("Incorrect numer of arguments for \"{}\", expected {} but received {}", identifier, expected, received),
+            CanNotCallReturn => format!("Can not call return outside of a function or procedure"),
+            CanNotParse(string) => format!("Can not parse string {} as number", string),
+            AssignToConstant(identifier) => format!("Can not assign value to constant \"{}\"", identifier),
+            InvalidBounds(bounds) => format!("Invalid bounds {}", bounds),
+            OutOfBounds(identifier, index) => format!("Index {} is out of bounds for array {}", identifier, index),
+            IndexNotAssigned(identifier, index) => format!("Index {} not assigned for array {}", identifier, index),
+            NegativeIndex(identifier, index) => format!("Index {} is out of bounds for array {}", identifier, index),
+        };
+        write!(f, "{}", message)
+    }
 }
 
 pub fn match_literal<'a>(
@@ -267,6 +365,6 @@ pub fn match_literal<'a>(
 ) -> Result<&'a LiteralType, Execution> {
     match a == b {
         true => Ok(a),
-        false => Err(Execution::IncorrectType(a.clone(), b.clone())),
+        false => Err(Execution::IncorrectType(a.into(), b.into())),
     }
 }

@@ -3,16 +3,20 @@ mod ast;
 mod evaluate;
 mod lexer;
 mod parser;
+mod test;
 
 use std::io::{stdin, Read};
-
+use std::hash::Hash;
+use std::fmt::Debug;
 use appendix::*;
 use evaluate::*;
 use lexer::*;
 use parser::*;
 
 use ariadne::*;
-use chumsky::prelude::*;
+use chumsky::{prelude::*, Stream};
+
+use crate::ast::Execution;
 
 fn print_error<Error: std::fmt::Debug>(error: Error) -> String {
     format!("error: {:?}", error)
@@ -37,43 +41,67 @@ fn validate_file_arg(arg: Option<&String>) -> Result<(String, String), String> {
     ))
 }
 
-fn main() -> Result<(), String> {
-    let args: Vec<String> = std::env::args().collect();
+fn display_error<T: Hash + Eq + Debug>(errors: Vec<Simple<T>>, file_name: &String, source: &String) {
+    for error in errors {
+        let span = error.span();
+        let report = Report::build(ReportKind::Error, file_name.clone(), 10)
+            .with_label(Label::new((file_name.clone(), span)))
+            .with_message(format!("{:?}", error.reason()));
+        
+        let report = match error.reason() {
+            chumsky::error::SimpleReason::Unexpected => {
+                report.with_message(format!("found {:?} but expected {:?}", error.found(), error.expected().filter_map(|value| value.as_ref()).collect::<Vec<&T>>()))
+            },
+            chumsky::error::SimpleReason::Unclosed { span: _, delimiter: _ } => report.with_message("unclosed"),
+            chumsky::error::SimpleReason::Custom(error) => report.with_message(error),
+        };
 
-    let (source, file_name) = validate_file_arg(args.get(1))?;
+        report.finish()
+            .print(sources(vec![(file_name.clone(), source.as_str())]))
+            .unwrap();
+    }
+}
 
-    //let source = include_str!("main.psps").trim();
-
+pub fn parse_and_run(source: String, file_name: String) -> Result<(), ()> {
     check_empty!(source.trim());
 
-    let lexed = lexer().parse(source.clone()).map_err(|errors| {
-        for error in errors {
-            let span = error.span();
-            Report::build(ReportKind::Error, file_name.clone(), 10)
-                .with_label(Label::new((file_name.clone(), span)))
-                .with_message(format!("{:?}", error.reason()))
-                .finish()
-                .print(sources(vec![(file_name.clone(), source.as_str())]))
-                .unwrap();
-        }
-        String::from("")
-    })?;
+    let lexed = lexer().parse(source.clone())
+    .map_err(|errors| display_error(errors, &file_name, &source))?;
 
     check_empty!(lexed);
 
-    //println!("{:#?}", lexed);
+    let parsed = parser()
+        .parse(Stream::from_iter(
+            source.len()..source.len() + 1,
+            lexed.into_iter(),
+        ))
+        .map_err(|errors| display_error(errors, &file_name, &source))?;
 
-    let parsed = parser().parse(lexed).map_err(print_error)?;
-
-    //println!("{:#?}", parsed);
     let start_state = State {
         functions: built_ins(),
         scopes: vec![],
     };
 
-    evaluate(&parsed, start_state, false).map_err(print_error)?;
+    if let Err(error) = evaluate(&parsed, start_state, false){
+        let error: Simple<Execution> = Simple::custom(error.1, error.0);
+        return Err(display_error(vec![error], &file_name, &source))
+    };
 
-    println!("\x1b[93mThe Program has run successfully. Press enter to exit.\x1b[0m");
+    Ok(())
+}
+
+fn main() -> Result<(), String> {
+    let args: Vec<String> = std::env::args().collect();
+
+    let (source, file_name) = validate_file_arg(args.get(1))?;
+
+    let result = if parse_and_run(source, file_name).is_err() {
+        "encountered errors"
+    }else{
+        "has run successfully"
+    };
+
+    println!("\x1b[93mThe Program {}. Press enter to exit.\x1b[0m", result);
     stdin().read(&mut [0]).unwrap();
     Ok(())
 }

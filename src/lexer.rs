@@ -12,7 +12,7 @@ macro_rules! just_to {
     )}
 }
 
-pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
+pub fn lexer<'a>() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let number = text::digits(10)
         .then(just('.').ignore_then(text::digits(10)).or_not())
         .map(|(whole, integral): (String, Option<String>)| {
@@ -22,11 +22,14 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
             } else {
                 Token::Integer(whole)
             }
-        });
+        })
+        .boxed()
+        .labelled("number");
 
     let boolean = text::keyword("TRUE")
         .to(Token::Boolean(true))
-        .or(text::keyword("FALSE").to(Token::Boolean(false)));
+        .or(text::keyword("FALSE").to(Token::Boolean(false)))
+        .labelled("boolean value");
 
     let open_bracket = just('(').to(Token::OpenBracket);
     let close_bracket = just(')').to(Token::CloseBracket);
@@ -76,7 +79,8 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
     let string = filter(|char: &char| char != &'\n' && char != &'\"')
         .repeated()
         .map(|vec| Token::String(vec.into_iter().collect()))
-        .delimited_by(just('\"'), just('\"'));
+        .delimited_by(just('\"'), just('\"'))
+        .labelled("string literal");
 
     let operators = choice::<_, Simple<char>>(just_to! {
     Operator, Ops,
@@ -96,31 +100,36 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
         "AND" => And,
         "OR" => Or,
         "NOT" => Not
-    });
+    })
+    .labelled("operator")
+    .boxed();
 
-    let assign = just("<-").or(just("←")).to(Token::Arrow);
+    let assign = just("<-").or(just("←")).to(Token::Arrow).labelled("arrow");
 
-    let colon = just(':').to(Token::Colon);
+    let colon = just(':').to(Token::Colon).labelled("colon");
 
-    let new_line = newline().repeated().at_least(1).ignored();
+    let new_line = newline()
+        .repeated()
+        .at_least(1)
+        .ignored()
+        .labelled("new line");
 
-    let comment = whitespace().ignore_then(
-        just("//")
-            .ignored()
-            .padded_by(indent().repeated())
-            .then_ignore(filter(|char: &char| char != &'\n').repeated())
-            .then_ignore(whitespace()),
-    );
+    let comment = just("//").then(take_until(just('\n'))).padded_by(whitespace())
+        .labelled("comment")
+        .boxed();
 
     let comma = just(',').to(Token::Comma);
 
     let tokens = choice::<_, Simple<char>>((
         comment
+            .clone()
             .repeated()
             .at_least(1)
             .ignored()
             .or(new_line)
-            .to(Token::NewLine),
+            .to(Token::NewLine)
+            .labelled("comment or new line")
+            .boxed(),
         number,
         string,
         boolean,
@@ -133,7 +142,10 @@ pub fn lexer<'a>() -> impl Parser<char, Vec<Token>, Error = Simple<char>> {
         open_square,
         close_square,
         comma,
-    ));
+    ))
+    .map_with_span(|token, span| (token, span))
+    .boxed();
+
     let ignored = indent().or(comment.ignored()).repeated().ignored();
 
     (tokens.repeated().at_least(1).padded_by(ignored))
