@@ -53,11 +53,11 @@ Clone the repo, have rustup installed, then type `cargo run [FILEPATH]` into you
 
 ## Contributors
 
-This is a solo project. I'd like to thank those who've contributed to the [Chumsky](https://github.com/zesterer/chumsky) and [Ariadne](https://github.com/zesterer/ariadne) crates for parsing and error reporting respectively. The Rust community is also very helpful, with the #lang-dev channel in the [community discord](https://discord.gg/rust-lang-community) providing valuable insight.
+This is a solo project, but I'd like to thank those who've contributed to the [Chumsky](https://github.com/zesterer/chumsky) and [Ariadne](https://github.com/zesterer/ariadne) crates for parsing and error reporting respectively. The Rust community is also very helpful, with the #lang-dev channel in the [community discord](https://discord.gg/rust-lang-community) providing valuable insight.
 
 ## Contributing 
 
-If you find and issues or things that I could improve on, feel free to open an issue or PR. I still have some things that I'd like to implement, including:
+If you find any issues or things that I could improve on, feel free to open an issue or PR. I still have some things that I'd like to implement, including:
 - User declared functions and procedures
 - Records and 2D arrays
 - Modules, to allow multiple files to be run together
