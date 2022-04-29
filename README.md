@@ -53,7 +53,7 @@ Clone the repo, have rustup installed, then type `cargo run [FILEPATH]` into you
 
 ## Contributors
 
-This is a solo project. I'd like to thank those who've contributed to the [Chumsky](https://github.com/zesterer/chumsky) and [Ariadne](https://github.com/zesterer/ariadne) crates for parsing and error reporting respectively. The Rust community is also very helpful, with the #lang-dev channel in the [community discord](https://discord.gg/rust-lang-community) providing valuable insight.
+This is a solo project, but I'd like to thank those who've contributed to the [Chumsky](https://github.com/zesterer/chumsky) and [Ariadne](https://github.com/zesterer/ariadne) crates for parsing and error reporting respectively. The Rust community is also very helpful, with the #lang-dev channel in the [community discord](https://discord.gg/rust-lang-community) providing valuable insight.
 
 ## Contributing 
 
