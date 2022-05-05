@@ -9,8 +9,6 @@ PseudoPseudoCode is a (mostly) functioning implementation of my computer science
 Pseudo Pseudo Code is turing complete, with strings, arrays, built-in functions, loops and I/O. As a test, here is the bubble sort algorithm that I had to learn as part of my syllabus, implemented in real, runnable Code.
 
 ```
-// before: 18, 98, 68, 92, 11, 3, 49, 98, 22
-
 DECLARE upperBound : INTEGER
 DECLARE lowerBound : INTEGER
 DECLARE index : INTEGER
@@ -33,9 +31,9 @@ REPEAT
     NEXT
     top ← top -1
 UNTIL (NOT swap) OR (top = 0) 
-
-// after: 3, 11, 18, 22, 49, 68, 92, 98, 98
 ```
+
+![Bubble Sort](misc/bubble_sort.gif)
 
 The full version can be seen in `examples/bubbleSort.psps`
 
